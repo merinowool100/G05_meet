@@ -14,28 +14,22 @@
             /* 最初は地図を非表示にする */
         }
     </style>
+    <script src="config.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
         import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
-
-        const firebaseConfig = {
-            apiKey: "",
-            authDomain: "",
-            databaseURL: "",
-            projectId: "",
-            storageBucket: "",
-            messagingSenderId: "9",
-            appId: ""
-        };
+        import keys from "./config.js";
 
         // Firebaseの初期化
-        const app = initializeApp(firebaseConfig);
+        const app = initializeApp(keys.firebaseConfig);
         const auth = getAuth(app);
         const db = getDatabase(app);
 
+        // 変数設定
         let map, marker;
         let currentLocation = { lat: 35.6762, lng: 139.6503 };  // デフォルト位置（東京）
+
 
         // 匿名認証でサインイン
         signInAnonymously(auth)
@@ -82,7 +76,7 @@
         // Google Maps APIを非同期で読み込む
         async function loadGoogleMaps() {
             const script = document.createElement("script");
-            script.src = `https://maps.googleapis.com/maps/api/js?key=xxxxxxxxxxxxxxxxxxxx&callback=initMap`;
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${keys.googleApiKey}&callback=initMap`;
             script.async = true;
             script.defer = true;
 
@@ -111,7 +105,7 @@
                 const userId = auth.currentUser.uid;
                 const userRef = ref(db, 'users/' + userId);
                 set(userRef, {
-                    name: auth.currentUser.uid, // 名前はUIDではなく、ユーザーが入力した名前にする必要があります
+                    name: username, // 名前はUIDではなく、ユーザーが入力した名前にする必要があります
                     location: currentLocation
                 })
                     .then(() => {
