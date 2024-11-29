@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        #map {
+            height: 100vh;
+            width: 100%;
+            /* 地図の幅を100%に設定 */
+            display: none;
+            /* 最初は地図を非表示にする */
+        }
+    </style>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+        import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "",
+            authDomain: "",
+            databaseURL: "",
+            projectId: "",
+            storageBucket: "",
+            messagingSenderId: "9",
+            appId: ""
+        };
+
+        // Firebaseの初期化
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getDatabase(app);
+
+        let map, marker;
+        let currentLocation = { lat: 35.6762, lng: 139.6503 };  // デフォルト位置（東京）
+
+        // 匿名認証でサインイン
+        signInAnonymously(auth)
+            .then(() => {
+                console.log("Anonymous user signed in");
+
+                // 名前を設定するフォームを表示
+                const nameForm = document.getElementById("name-form");
+                nameForm.style.display = "block";  // 名前フォームを表示
+
+                const saveButton = document.getElementById("save-name");
+                saveButton.addEventListener("click", function () {
+                    const username = document.getElementById("username").value;
+
+                    // usernameが空でないかを確認
+                    if (username.trim() !== "") {
+                        const userId = auth.currentUser.uid;  // 現在のユーザーIDを取得
+                        const userRef = ref(db, "users/" + userId);
+
+                        // Firebaseに名前と位置情報を保存
+                        set(userRef, {
+                            name: username,  // 名前を保存
+                            location: currentLocation  // 現在の位置を保存
+                        })
+                            .then(() => {
+                                console.log("名前が保存されました");
+                                nameForm.style.display = "none"; // 名前フォームを非表示に
+                                document.getElementById("map").style.display = "block";  // 地図を表示
+                                loadGoogleMaps();  // 地図の読み込み
+                            })
+                            .catch((error) => {
+                                console.error("名前の保存に失敗しました", error);
+                            });
+                    } else {
+                        alert("名前を入力してください");
+                    }
+                });
+            })
+            .catch((error) => {
+                console.error("Error signing in anonymously:", error.code, error.message);
+                alert("匿名認証に失敗しました。再試行してください。");
+            });
+
+        // Google Maps APIを非同期で読み込む
+        async function loadGoogleMaps() {
+            const script = document.createElement("script");
+            script.src = `https://maps.googleapis.com/maps/api/js?key=xxxxxxxxxxxxxxxxxxxx&callback=initMap`;
+            script.async = true;
+            script.defer = true;
+
+            document.head.appendChild(script);
+        }
+
+        window.initMap = function () {
+            getLocation(function (position) {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                currentLocation = { lat: lat, lng: lon };
+
+                // 地図の表示
+                map = new google.maps.Map(document.getElementById("map"), {
+                    center: currentLocation,
+                    zoom: 18
+                });
+
+                marker = new google.maps.Marker({
+                    position: currentLocation,
+                    map: map,
+                    title: "You"  // 最初は "You" というタイトルを表示
+                });
+
+                // Firebaseに位置情報を保存
+                const userId = auth.currentUser.uid;
+                const userRef = ref(db, 'users/' + userId);
+                set(userRef, {
+                    name: auth.currentUser.uid, // 名前はUIDではなく、ユーザーが入力した名前にする必要があります
+                    location: currentLocation
+                })
+                    .then(() => {
+                        console.log("位置情報が正常に保存されました。");
+                    })
+                    .catch((error) => {
+                        console.error("位置情報の保存に失敗しました:", error);
+                        alert("位置情報の保存に失敗しました。再試行してください。");
+                    });
+
+                // 他のユーザーの位置を地図に表示
+                const usersRef = ref(db, 'users');
+                onValue(usersRef, (snapshot) => {
+                    snapshot.forEach((childSnapshot) => {
+                        const userId = childSnapshot.key;
+                        const userData = childSnapshot.val();
+                        const userLocation = userData.location;
+                        const userName = userData.name;  // 名前を取得
+
+                        if (userId !== auth.currentUser.uid) {
+                            // 名前をマーカーのラベルとして表示
+                            new google.maps.Marker({
+                                position: userLocation,
+                                map: map,
+                                label: {
+                                    text: userName || "User",  // 名前がない場合は"User"を表示
+                                    color: 'orange',
+                                    fontSize: '14px',
+                                    fontWeight: 'bold'
+                                },
+                                animation: google.maps.Animation.DROP
+                            });
+                        }
+                    });
+                });
+
+                watchPositionAndUpdateMap(userRef);
+            }, (error) => {
+                console.error("位置情報の取得に失敗しました:", error);
+                alert("位置情報の取得に失敗しました。再試行してください。");
+            });
+        };
+
+        function watchPositionAndUpdateMap(userRef) {
+            navigator.geolocation.watchPosition(function (position) {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                currentLocation = { lat: lat, lng: lon };
+
+                set(userRef, currentLocation)
+                    .then(() => {
+                        console.log("位置情報が更新されました。");
+                    })
+                    .catch((error) => {
+                        console.error("位置情報の更新に失敗しました:", error);
+                    });
+
+                map.setCenter(currentLocation);
+                marker.setPosition(currentLocation);
+            }, (error) => {
+                console.error("位置情報の取得に失敗しました:", error.message);
+                alert("位置情報の取得に失敗しました。再試行してください。");
+            });
+        }
+
+        function getLocation(callback) {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(callback, (error) => {
+                    console.error("位置情報の取得に失敗しました:", error.message);
+                    alert("位置情報の取得に失敗しました。ブラウザの位置情報設定を確認してください。");
+                });
+            } else {
+                console.error("このブラウザは位置情報に対応していません。");
+                alert("位置情報機能に対応していないブラウザです。");
+            }
+        }
+
+        // ウィンドウを閉じるときに位置情報を削除
+        window.onbeforeunload = function () {
+            const userId = auth.currentUser.uid;
+            const userRef = ref(db, "users/" + userId);
+            set(userRef, null)
+                .then(() => {
+                    console.log("位置情報が削除されました");
+                })
+                .catch((error) => {
+                    console.log("位置情報の削除に失敗しました:", error);
+                });
+        };
+
+    </script>
+</head>
+
+<body>
+    <div id="name-form" style="display: block;">
+        <label for="username">Enter your name</label>
+        <input type="text" id="username" placeholder="Enter your name">
+        <button id="save-name">Save name</button>
+    </div>
+    <div id="map"></div> <!-- 地図を最初は非表示にする -->
+</body>
+
+</html>
